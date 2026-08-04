@@ -19,5 +19,15 @@ module "playful-web" {
       preserve_url = true
       status       = 301
     }
+    discord = {
+      location     = "https://discord.com/invite/FMcvc6T"
+      preserve_url = false
+      status       = 302
+    }
+    donate = {
+      location     = "https://opencollective.com/playfulprogramming"
+      preserve_url = false
+      status       = 302
+    }
   }
 }
