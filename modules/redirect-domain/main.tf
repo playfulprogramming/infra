@@ -110,7 +110,7 @@ resource "fastly_service_vcl" "redirects" {
   }
 
   snippet {
-    name     = "Path redirects (tables)"
+    name     = "redirects_init"
     type     = "init"
     priority = 100
     content = join("\n", concat(
@@ -125,7 +125,7 @@ resource "fastly_service_vcl" "redirects" {
   }
 
   snippet {
-    name     = "Path redirects (recv)"
+    name     = "redirects_recv"
     type     = "recv"
     priority = 100
     content  = <<-VCL
@@ -139,7 +139,7 @@ resource "fastly_service_vcl" "redirects" {
   }
 
   snippet {
-    name     = "Path redirects (error)"
+    name     = "redirects_error"
     type     = "error"
     priority = 100
     content  = <<-VCL
