@@ -13,12 +13,6 @@ variable "backend_host" {
   description = "A safety backend required by Fastly; redirect-domain requests never reach it"
 }
 
-variable "clean_urls" {
-  type        = bool
-  description = "Whether .html request paths receive a query-preserving 308 to their extensionless path"
-  default     = false
-}
-
 variable "redirects" {
   type = map(object({
     location       = string
@@ -92,20 +86,6 @@ resource "fastly_service_vcl" "redirects" {
     use_ssl           = true
   }
 
-  dynamic "snippet" {
-    for_each = var.clean_urls ? [1] : []
-    content {
-      name     = "Clean URLs (recv)"
-      type     = "recv"
-      priority = 90
-      content  = <<-VCL
-        if (std.tolower(req.http.host) == ${jsonencode(var.domain)} && req.url.path ~ "[.]html$") {
-          error 617 "clean-url";
-        }
-      VCL
-    }
-  }
-
   snippet {
     name     = "Path redirects (tables)"
     type     = "init"
@@ -140,17 +120,6 @@ resource "fastly_service_vcl" "redirects" {
     type     = "error"
     priority = 100
     content  = <<-VCL
-      if (obj.status == 617 && obj.response == "clean-url") {
-        set obj.status = 308;
-        set obj.response = "Permanent Redirect";
-        set obj.http.Location = regsub(req.url.path, "[.]html$", "");
-        if (std.strlen(req.url.qs) > 0) {
-          set obj.http.Location = obj.http.Location + "?" + req.url.qs;
-        }
-        synthetic "";
-        return (deliver);
-      }
-
       if (obj.status == 618 && obj.response == "path-redirect") {
         set obj.status = table.lookup_integer(redirect_statuses, req.url.path, 307);
         if (obj.status == 301) {

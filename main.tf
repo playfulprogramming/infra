@@ -38,7 +38,6 @@ module "pfp-red" {
 
   domain       = "pfp.red"
   backend_host = var.playful_web_host
-  clean_urls   = true
 
   redirects = {
     "/" = {
