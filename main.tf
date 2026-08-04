@@ -12,4 +12,12 @@ module "playful-web" {
   domain  = var.playful_web_domain
   host    = var.playful_web_host
   noindex = var.env != "prod"
+
+  subdomain_redirects = {
+    www = {
+      location     = "https://${var.playful_web_domain}"
+      preserve_url = true
+      status       = 301
+    }
+  }
 }
