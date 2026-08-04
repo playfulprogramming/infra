@@ -169,61 +169,52 @@ resource "fastly_service_vcl" "cdn" {
     timer_support    = false
   }
 
-  dynamic "snippet" {
-    for_each = length(local.subdomain_redirect_hosts) > 0 ? [1] : []
-    content {
-      name     = "Redirects (tables)"
-      type     = "init"
-      priority = 100
-      content = join("\n", concat(
-        ["table redirect_locations STRING {"],
-        [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${jsonencode(redirect.location)},"],
-        ["}", "", "table redirect_statuses INTEGER {"],
-        [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${redirect.status},"],
-        ["}", "", "table redirect_preserve_urls BOOL {"],
-        [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${redirect.preserve_url},"],
-        ["}"],
-      ))
-    }
+  snippet {
+    name     = "redirects_init"
+    type     = "init"
+    priority = 100
+    content = join("\n", concat(
+      ["table redirect_locations STRING {"],
+      [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${jsonencode(redirect.location)},"],
+      ["}", "", "table redirect_statuses INTEGER {"],
+      [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${redirect.status},"],
+      ["}", "", "table redirect_preserve_urls BOOL {"],
+      [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${redirect.preserve_url},"],
+      ["}"],
+    ))
   }
 
-  dynamic "snippet" {
-    for_each = length(local.subdomain_redirect_hosts) > 0 ? [1] : []
-    content {
-      name     = "Redirects (recv)"
-      type     = "recv"
-      priority = 100
-      content  = <<-VCL
-        if (table.contains(redirect_locations, std.tolower(req.http.host))) {
-          error 618 "redirect";
-        }
-      VCL
-    }
+  snippet {
+    name     = "redirects_recv"
+    type     = "recv"
+    priority = 100
+    content  = <<-VCL
+      if (table.contains(redirect_locations, std.tolower(req.http.host))) {
+        error 618 "redirect";
+      }
+    VCL
   }
 
-  dynamic "snippet" {
-    for_each = length(local.subdomain_redirect_hosts) > 0 ? [1] : []
-    content {
-      name     = "Redirects (error)"
-      type     = "error"
-      priority = 100
-      content  = <<-VCL
-        if (obj.status == 618 && obj.response == "redirect") {
-          set obj.status = table.lookup_integer(redirect_statuses, std.tolower(req.http.host), 302);
-          if (obj.status == 301) {
-            set obj.response = "Moved Permanently";
-          } else {
-            set obj.response = "Found";
-          }
-          set obj.http.Location = table.lookup(redirect_locations, std.tolower(req.http.host), "");
-          if (table.lookup_bool(redirect_preserve_urls, std.tolower(req.http.host), false)) {
-            set obj.http.Location = obj.http.Location + req.url;
-          }
-          synthetic "";
-          return (deliver);
+  snippet {
+    name     = "redirects_error"
+    type     = "error"
+    priority = 100
+    content  = <<-VCL
+      if (obj.status == 618 && obj.response == "redirect") {
+        set obj.status = table.lookup_integer(redirect_statuses, std.tolower(req.http.host), 302);
+        if (obj.status == 301) {
+          set obj.response = "Moved Permanently";
+        } else {
+          set obj.response = "Found";
         }
-      VCL
-    }
+        set obj.http.Location = table.lookup(redirect_locations, std.tolower(req.http.host), "");
+        if (table.lookup_bool(redirect_preserve_urls, std.tolower(req.http.host), false)) {
+          set obj.http.Location = obj.http.Location + req.url;
+        }
+        synthetic "";
+        return (deliver);
+      }
+    VCL
   }
 }
 
