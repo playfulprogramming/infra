@@ -33,10 +33,10 @@ module "playful-web" {
 }
 
 module "pfp-red" {
-  count  = var.env == "prod" ? 1 : 0
   source = "./modules/redirect-domain"
 
-  domain       = "pfp.red"
+  domain       = var.env == "prod" ? "pfp.red" : "staging.pfp.red"
+  dns_zone     = "pfp.red"
   backend_host = var.playful_web_host
 
   redirects = {

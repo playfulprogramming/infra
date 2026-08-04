@@ -1,10 +1,20 @@
 variable "domain" {
   type        = string
-  description = "The apex domain that serves the redirects"
+  description = "The domain that serves the redirects"
 
   validation {
     condition     = var.domain == lower(var.domain) && can(regex("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", var.domain))
     error_message = "Domain must be a lowercase DNS name."
+  }
+}
+
+variable "dns_zone" {
+  type        = string
+  description = "The Porkbun DNS zone containing the redirect domain"
+
+  validation {
+    condition     = var.dns_zone == lower(var.dns_zone) && can(regex("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", var.dns_zone))
+    error_message = "DNS zone must be a lowercase DNS name."
   }
 }
 
@@ -54,13 +64,19 @@ variable "redirects" {
 }
 
 locals {
+  dns_subdomain = var.domain == var.dns_zone ? "" : trimsuffix(var.domain, ".${var.dns_zone}")
   managed_dns_challenge = one([
     for challenge in fastly_tls_subscription.main.managed_dns_challenges :
     challenge if challenge.record_name == "_acme-challenge.${var.domain}"
   ])
+  dns_challenge_subdomain = trimsuffix(local.managed_dns_challenge.record_name, ".${var.dns_zone}")
   fastly_apex_addresses = sort([
     for record in data.fastly_tls_configuration.default_tls.dns_records :
     record.record_value if record.record_type == "A"
+  ])
+  fastly_cname = one([
+    for record in data.fastly_tls_configuration.default_tls.dns_records :
+    record.record_value if record.record_type == "CNAME"
   ])
 }
 
@@ -70,6 +86,13 @@ resource "fastly_service_vcl" "redirects" {
   http3    = true
   name     = "Redirects for ${var.domain}"
   stage    = false
+
+  lifecycle {
+    precondition {
+      condition     = var.domain == var.dns_zone || endswith(var.domain, ".${var.dns_zone}")
+      error_message = "Redirect domain must be the DNS zone or one of its subdomains."
+    }
+  }
 
   domain {
     name = var.domain
@@ -161,8 +184,8 @@ resource "fastly_tls_subscription" "main" {
 resource "porkbun_dns_record" "domain_validation" {
   depends_on = [fastly_tls_subscription.main]
 
-  domain    = var.domain
-  subdomain = "_acme-challenge"
+  domain    = var.dns_zone
+  subdomain = local.dns_challenge_subdomain
   type      = local.managed_dns_challenge.record_type
   content   = local.managed_dns_challenge.record_value
   ttl       = 600
@@ -183,9 +206,9 @@ resource "porkbun_dns_record" "apex" {
   # Fastly publishes exactly four global A records for apex domains. Keeping
   # these instance keys static allows the first plan to succeed even though
   # their values are unavailable until TLS validation completes.
-  for_each = { for index in range(4) : tostring(index) => index }
+  for_each = local.dns_subdomain == "" ? { for index in range(4) : tostring(index) => index } : {}
 
-  domain    = var.domain
+  domain    = var.dns_zone
   subdomain = ""
   type      = "A"
   content   = local.fastly_apex_addresses[each.value]
@@ -197,4 +220,14 @@ resource "porkbun_dns_record" "apex" {
       error_message = "Fastly's default TLS configuration must provide exactly four apex A records."
     }
   }
+}
+
+resource "porkbun_dns_record" "subdomain" {
+  for_each = local.dns_subdomain == "" ? {} : { redirect = true }
+
+  domain    = var.dns_zone
+  subdomain = local.dns_subdomain
+  type      = "CNAME"
+  content   = local.fastly_cname
+  ttl       = 600
 }
