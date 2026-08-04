@@ -13,6 +13,31 @@ variable "noindex" {
   description = "Whether a noindex header should be appended to every response"
 }
 
+variable "subdomain_redirects" {
+  type = map(object({
+    location     = string
+    preserve_url = bool
+    status       = number
+  }))
+  description = "Map of subdomain to its redirect configuration"
+  default     = {}
+
+  validation {
+    condition = alltrue([
+      for redirect in values(var.subdomain_redirects) :
+      contains([301, 302], redirect.status)
+    ])
+    error_message = "Redirect status must be either 301 or 302."
+  }
+}
+
+locals {
+  subdomain_redirect_hosts = {
+    for subdomain, redirect in var.subdomain_redirects :
+    "${subdomain}.${var.domain}" => redirect
+  }
+}
+
 resource "fastly_service_vcl" "cdn" {
   activate = true
   comment  = "Managed by Tofu"
@@ -24,8 +49,11 @@ resource "fastly_service_vcl" "cdn" {
     name = var.domain
   }
 
-  domain {
-    name = "www.${var.domain}"
+  dynamic "domain" {
+    for_each = local.subdomain_redirect_hosts
+    content {
+      name = domain.key
+    }
   }
 
   backend {
@@ -141,29 +169,61 @@ resource "fastly_service_vcl" "cdn" {
     timer_support    = false
   }
 
-  snippet {
-    name     = "Redirect www to apex (recv)"
-    type     = "recv"
-    priority = 100
-    content  = <<-VCL
-      if (std.tolower(req.http.host) == "www.${var.domain}") {
-        error 618 "www-to-apex";
-      }
-    VCL
+  dynamic "snippet" {
+    for_each = length(local.subdomain_redirect_hosts) > 0 ? [1] : []
+    content {
+      name     = "Redirects (tables)"
+      type     = "init"
+      priority = 100
+      content = join("\n", concat(
+        ["table redirect_locations STRING {"],
+        [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${jsonencode(redirect.location)},"],
+        ["}", "", "table redirect_statuses INTEGER {"],
+        [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${redirect.status},"],
+        ["}", "", "table redirect_preserve_urls BOOL {"],
+        [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${redirect.preserve_url},"],
+        ["}"],
+      ))
+    }
   }
 
-  snippet {
-    name     = "Redirect www to apex (error)"
-    type     = "error"
-    priority = 100
-    content  = <<-VCL
-      if (obj.status == 618 && obj.response == "www-to-apex") {
-        set obj.status = 301;
-        set obj.response = "Moved Permanently";
-        set obj.http.Location = "https://${var.domain}" + req.url;
-        return (deliver);
-      }
-    VCL
+  dynamic "snippet" {
+    for_each = length(local.subdomain_redirect_hosts) > 0 ? [1] : []
+    content {
+      name     = "Redirects (recv)"
+      type     = "recv"
+      priority = 100
+      content  = <<-VCL
+        if (table.contains(redirect_locations, std.tolower(req.http.host))) {
+          error 618 "redirect";
+        }
+      VCL
+    }
+  }
+
+  dynamic "snippet" {
+    for_each = length(local.subdomain_redirect_hosts) > 0 ? [1] : []
+    content {
+      name     = "Redirects (error)"
+      type     = "error"
+      priority = 100
+      content  = <<-VCL
+        if (obj.status == 618 && obj.response == "redirect") {
+          set obj.status = table.lookup_integer(redirect_statuses, std.tolower(req.http.host), 302);
+          if (obj.status == 301) {
+            set obj.response = "Moved Permanently";
+          } else {
+            set obj.response = "Found";
+          }
+          set obj.http.Location = table.lookup(redirect_locations, std.tolower(req.http.host), "");
+          if (table.lookup_bool(redirect_preserve_urls, std.tolower(req.http.host), false)) {
+            set obj.http.Location = obj.http.Location + req.url;
+          }
+          synthetic "";
+          return (deliver);
+        }
+      VCL
+    }
   }
 }
 
@@ -216,9 +276,11 @@ resource "porkbun_dns_record" "apex" {
   ttl       = 600
 }
 
-resource "porkbun_dns_record" "www" {
+resource "porkbun_dns_record" "subdomain_redirect" {
+  for_each = var.subdomain_redirects
+
   domain    = var.domain
-  subdomain = "www"
+  subdomain = each.key
   type      = "CNAME"
   content   = one([for record in data.fastly_tls_configuration.default_tls.dns_records : record.record_value if record.record_type == "CNAME"])
   ttl       = 600
