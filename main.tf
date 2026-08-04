@@ -31,3 +31,39 @@ module "playful-web" {
     }
   }
 }
+
+module "pfp-red" {
+  source = "./modules/redirect-domain"
+
+  domain       = var.env == "prod" ? "pfp.red" : "staging.pfp.red"
+  dns_zone     = "pfp.red"
+  backend_host = var.playful_web_host
+
+  redirects = {
+    "/" = {
+      location       = "https://playfulprogramming.com/"
+      preserve_query = true
+      status         = 307
+    }
+    "/bootcamp" = {
+      location       = "https://playfulprogramming.com/events/sacramento-bootcamp"
+      preserve_query = true
+      status         = 307
+    }
+    "/bootcamp/" = {
+      location       = "https://playfulprogramming.com/events/sacramento-bootcamp"
+      preserve_query = true
+      status         = 307
+    }
+    "/book-club" = {
+      location       = "https://playfulprogramming.com/events/book-club"
+      preserve_query = true
+      status         = 307
+    }
+    "/book-club/" = {
+      location       = "https://playfulprogramming.com/events/book-club"
+      preserve_query = true
+      status         = 307
+    }
+  }
+}
