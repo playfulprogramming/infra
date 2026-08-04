@@ -173,7 +173,7 @@ resource "fastly_service_vcl" "cdn" {
     name     = "redirects_init"
     type     = "init"
     priority = 100
-    content  = join("\n", concat(
+    content = join("\n", concat(
       ["table redirect_locations STRING {"],
       [for host, redirect in local.subdomain_redirect_hosts : "  ${jsonencode(host)}: ${jsonencode(redirect.location)},"],
       ["}", "", "table redirect_statuses INTEGER {"],
