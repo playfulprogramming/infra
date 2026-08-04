@@ -13,8 +13,8 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: all
+  queue: max
 
 env:
   TF_VAR_fastly_api_key: ${{ secrets.fastly_api_key }}
