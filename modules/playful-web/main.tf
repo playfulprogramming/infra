@@ -63,9 +63,9 @@ resource "fastly_service_vcl" "cdn" {
   }
 
   condition {
-    name = "condition_request_false"
+    name      = "condition_request_false"
     statement = "false"
-    type = "REQUEST"
+    type      = "REQUEST"
   }
 
   backend {
