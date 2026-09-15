@@ -193,12 +193,12 @@ resource "fastly_service_vcl" "cdn" {
     content  = <<-VCL
       set req.backend = F_playful_web;
 
-      if (req.path == "/areyoumyuser/js/script.js") {
+      if (req.url.path == "/areyoumyuser/js/script.js") {
         set req.backend = F_plausible;
         set req.url = "/js/script.outbound-links.local.js";
       }
       
-      if (req.path == "/areyoumyuser/api/event") {
+      if (req.url.path == "/areyoumyuser/api/event") {
         set req.backend = F_plausible;
         set req.url = "/api/event";
       }
