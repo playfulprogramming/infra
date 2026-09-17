@@ -62,6 +62,12 @@ resource "fastly_service_vcl" "cdn" {
     }
   }
 
+  condition {
+    name      = "condition_request_false"
+    statement = "false"
+    type      = "REQUEST"
+  }
+
   backend {
     address           = var.host
     name              = "playful_web"
@@ -70,6 +76,7 @@ resource "fastly_service_vcl" "cdn" {
     ssl_cert_hostname = var.host
     ssl_sni_hostname  = var.host
     use_ssl           = true
+    request_condition = "condition_request_false"
   }
 
   backend {
@@ -81,6 +88,7 @@ resource "fastly_service_vcl" "cdn" {
     ssl_cert_hostname = var.plausible_host
     ssl_sni_hostname  = var.plausible_host
     use_ssl           = true
+    request_condition = "condition_request_false"
   }
 
   gzip {
@@ -193,12 +201,12 @@ resource "fastly_service_vcl" "cdn" {
     content  = <<-VCL
       set req.backend = F_playful_web;
 
-      if (req.path == "/areyoumyuser/js/script.js") {
+      if (req.url.path == "/areyoumyuser/js/script.js") {
         set req.backend = F_plausible;
         set req.url = "/js/script.outbound-links.local.js";
       }
       
-      if (req.path == "/areyoumyuser/api/event") {
+      if (req.url.path == "/areyoumyuser/api/event") {
         set req.backend = F_plausible;
         set req.url = "/api/event";
       }
